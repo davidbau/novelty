@@ -368,6 +368,29 @@ def tally_covariance(compute, dataset, sample_size=None, batch_size=10,
         save_cached_state(cachefile, rcov, args)
         return rcov
 
+def tally_conditional_covariance(compute, dataset, sample_size=None,
+        batch_size=10, cachefile=None, **kwargs):
+    '''
+    Computes conditional covariance, e.g., covariance for each class.
+    The compute function should return a collection of (condition, sample)
+    pairs where sample is formatted as a (sample, unit)-dimension tensor.
+    '''
+    with torch.no_grad():
+        args = dict(sample_size=sample_size)
+        cached_state = load_cached_state(cachefile, args)
+        if cached_state is not None:
+            return runningstats.RunningConditionalCovariance(state=cached_state)
+        loader = make_loader(dataset, sample_size, batch_size, **kwargs)
+        ccov = runningstats.RunningConditionalCovariance()
+        for batch in pbar(loader):
+            sample_set = call_compute(compute, batch)
+            for cond, data in sample_set:
+                ccov.add(cond, data)
+        # At the end, move all to the CPU
+        ccov.to_('cpu')
+        save_cached_state(cachefile, ccov, args)
+        return ccov
+
 def tally_cross_covariance(compute, dataset, sample_size=None, batch_size=10,
         cachefile=None, **kwargs):
     '''

@@ -134,7 +134,7 @@ class RunningConditionalTopK:
         self.k = k
         self.count = 0
 
-    def add(self, condition, data, index):
+    def add(self, condition, data, index=None):
         if condition not in self.running_topk:
             self.running_topk[condition] = RunningTopK()
         rv = self.running_topk[condition]
@@ -1048,6 +1048,69 @@ class RunningCovariance:
         self.count = dic['count'].item()
         self._mean = torch.from_numpy(dic['mean'])
         self.cmom2 = torch.from_numpy(dic['cmom2'])
+
+class RunningConditionalCovariance:
+    def __init__(self, state=None):
+        self.running_cov = {}
+        if state is not None:
+            self.set_state_dict(state)
+            return
+        self.count = 0
+
+    def add(self, condition, data):
+        if condition not in self.running_cov:
+            self.running_cov[condition] = RunningCovariance()
+        rv = self.running_cov[condition]
+        rv.add(data)
+        self.count += len(data)
+
+    def keys(self):
+        return self.running_cov.keys()
+
+    def conditional(self, c):
+        return self.running_cov[c]
+
+    def has_conditional(self, c):
+        return c in self.running_cov
+
+    def cpu_(self):
+        self.to_('cpu')
+
+    def cuda_(self):
+        self.co_('cuda')
+
+    def to_(self, device):
+        self.mom2 = self.mom2.to(device)
+
+    def to_(self, device, conditions=None):
+        if conditions is None:
+            conditions = self.keys()
+        for cond in conditions:
+            if cond in self.running_cov:
+                self.running_cov[cond].to_(device)
+
+    def state_dict(self):
+        conditions = sorted(self.running_cov.keys())
+        result = dict(
+                constructor=self.__module__ + '.' +
+                    self.__class__.__name__ + '()',
+                conditions=conditions)
+        for i, c in enumerate(conditions):
+            result.update({
+                '%d.%s' % (i, k): v
+                for k, v in self.running_cov[c].state_dict().items()})
+        return result
+
+    def set_state_dict(self, dic):
+        conditions = list(dic['conditions'])
+        subdicts = defaultdict(dict)
+        for k, v in dic.items():
+            if '.' in k:
+                p, s = k.split('.', 1)
+                subdicts[p][s] = v
+        self.running_cov = {
+                c: RunningCovariance(state=subdicts[str(i)])
+                for i, c in enumerate(conditions)}
 
 class RunningSecondMoment:
     '''
