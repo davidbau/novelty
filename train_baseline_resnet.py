@@ -65,24 +65,25 @@ def main():
 
     model = late_model
 
-    init_lr = 1e-5 if args.dataset == 'stylized-places' else 1e-4
+    max_lr = 1e-2
     max_iter = 100001
-    early_iter = 1000
-    mid_iter = 1100
     criterion = torch.nn.CrossEntropyLoss().cuda()
     optimizer = torch.optim.Adam(model.parameters())
+    scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, max_lr,
+            total_steps=max_iter - 1)
     iter_num = 0
     best = dict(val_accuracy=0.0)
     # Oh, hold on.  Let's actually resume training if we already have a model.
     checkpoint_filename = 'weights.pth'
     best_filename = 'best_%s' % checkpoint_filename
     best_checkpoint = os.path.join(experiment_dir, best_filename)
-    try_to_resume_training = True
+    try_to_resume_training = False
     if try_to_resume_training and os.path.exists(best_checkpoint):
         checkpoint = torch.load(os.path.join(experiment_dir, best_filename))
         iter_num = checkpoint['iter']
         model.load_state_dict(checkpoint['state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer'])
+        scheduler.load_state_dict(checkpoint['scheduler'])
         best['val_accuracy'] = checkpoint['accuracy']
 
     def save_checkpoint(state, is_best):
@@ -115,6 +116,7 @@ def main():
             'iter': iter_num,
             'state_dict': model.state_dict(),
             'optimizer' : optimizer.state_dict(),
+            'scheduler' : scheduler.state_dict(),
             'accuracy': val_acc.avg,
             'loss': val_loss.avg,
         }, val_acc.avg > best['val_accuracy'])
@@ -139,6 +141,8 @@ def main():
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
+                # Learning rate schedule
+                scheduler.step()
             # Also check training set accuracy
             _, pred = output.max(1)
             accuracy = (target_var.eq(pred)).data.float().sum().item() / (
@@ -147,10 +151,6 @@ def main():
             remaining = 1 - iter_num / float(max_iter)
             pbar.post(l=train_loss.avg, a=train_acc.avg,
                     v=best['val_accuracy'])
-            # Linear learning rate decay
-            lr = init_lr * remaining
-            for param_group in optimizer.param_groups:
-                param_group['lr'] = lr
             # Ocassionally check validation set accuracy and checkpoint
             if iter_num % 100 == 0:
                 validate_and_checkpoint()
