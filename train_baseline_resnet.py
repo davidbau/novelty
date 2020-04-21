@@ -8,13 +8,15 @@ def parseargs():
     def aa(*args, **kwargs):
         parser.add_argument(*args, **kwargs)
     aa('--dataset', choices=['imagenet'], default='imagenet')
-    aa('--selected_classes', default=500)
+    aa('--selected_classes', type=int, default=500)
+    aa('--training_iterations', type=int, default=100001)
     args = parser.parse_args()
     return args
 
 def main():
     args = parseargs()
-    experiment_dir = 'results/baseline-%s-resnet' % args.dataset
+    experiment_dir = 'results/baseline-%d-%s-resnet' % (
+            args.selected_classes, args.dataset)
     training_dir = 'datasets/%s/train' % args.dataset
     val_dir = 'datasets/%s/val' % args.dataset
     os.makedirs(experiment_dir, exist_ok=True)
@@ -66,7 +68,7 @@ def main():
     model = late_model
 
     max_lr = 1e-2
-    max_iter = 100001
+    max_iter = args.training_iterations
     criterion = torch.nn.CrossEntropyLoss().cuda()
     optimizer = torch.optim.Adam(model.parameters())
     scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, max_lr,
