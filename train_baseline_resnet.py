@@ -1,4 +1,4 @@
-import torch, numpy, os, shutil, math, re, torchvision, argparse
+import torch, numpy, os, shutil, math, re, torchvision, argparse, warnings
 from netdissect import parallelfolder, renormalize, pbar
 from torchvision import transforms
 from torch.optim import Optimizer
@@ -7,8 +7,8 @@ def parseargs():
     parser = argparse.ArgumentParser()
     def aa(*args, **kwargs):
         parser.add_argument(*args, **kwargs)
-    aa('--dataset', choices=['imagenet'], default='imagenet')
-    aa('--selected_classes', type=int, default=500)
+    aa('--dataset', choices=['imagenet', 'novelty'], default='novelty')
+    aa('--selected_classes', type=int, default=413)
     aa('--training_iterations', type=int, default=100001)
     args = parser.parse_args()
     return args
@@ -17,8 +17,11 @@ def main():
     args = parseargs()
     experiment_dir = 'results/baseline-%d-%s-resnet' % (
             args.selected_classes, args.dataset)
-    training_dir = 'datasets/%s/train' % args.dataset
-    val_dir = 'datasets/%s/val' % args.dataset
+    ds_dirname = dict(
+            novelty='novelty/dataset_v1/known_classes/images',
+            imagenet='imagenet')[args.dataset]
+    training_dir = 'datasets/%s/train' % ds_dirname
+    val_dir = 'datasets/%s/val' % ds_dirname
     os.makedirs(experiment_dir, exist_ok=True)
     with open(os.path.join(experiment_dir, 'args.txt'), 'w') as f:
         f.write(str(args) + '\n')
@@ -28,6 +31,8 @@ def main():
         pbar.print(s)
     def filter_tuple(item):
         return item[1] < args.selected_classes
+    # Imagenet has a couple bad exif images.
+    warnings.filterwarnings('ignore', message='.*orrupt EXIF.*')
     # Here's our data
     train_loader = torch.utils.data.DataLoader(
         parallelfolder.ParallelImageFolders([training_dir],
@@ -40,7 +45,7 @@ def main():
                         transforms.ToTensor(),
                         renormalize.NORMALIZER['imagenet'],
                         ])),
-        batch_size=128, shuffle=True,
+        batch_size=64, shuffle=True,
         num_workers=48, pin_memory=True)
     val_loader = torch.utils.data.DataLoader(
         parallelfolder.ParallelImageFolders([val_dir],
@@ -52,7 +57,7 @@ def main():
                         transforms.ToTensor(),
                         renormalize.NORMALIZER['imagenet'],
                         ])),
-        batch_size=128, shuffle=False,
+        batch_size=64, shuffle=False,
         num_workers=24, pin_memory=True)
     late_model = torchvision.models.resnet50(num_classes=args.selected_classes)
     for n, p in late_model.named_parameters():
@@ -67,7 +72,7 @@ def main():
 
     model = late_model
 
-    max_lr = 1e-2
+    max_lr = 5e-3
     max_iter = args.training_iterations
     criterion = torch.nn.CrossEntropyLoss().cuda()
     optimizer = torch.optim.Adam(model.parameters())
@@ -154,7 +159,7 @@ def main():
             pbar.post(l=train_loss.avg, a=train_acc.avg,
                     v=best['val_accuracy'])
             # Ocassionally check validation set accuracy and checkpoint
-            if iter_num % 100 == 0:
+            if iter_num % 1000 == 0:
                 validate_and_checkpoint()
                 model.train()
             # Advance
