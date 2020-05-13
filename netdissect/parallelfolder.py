@@ -31,7 +31,14 @@ def default_loader(filename):
     elif filename.endswith('.npz'):
         return numpy.load(filename)
     else:
-        return tv_default_loader(filename)
+        try:
+            return tv_default_loader(filename)
+        except:
+            print('Error in', filename)
+            # Some images the high-speed loader can't load but PIL can.
+            im = Image.open(filename)
+            im.load()
+            return im
 
 class ParallelImageFolders(data.Dataset):
     """
@@ -97,7 +104,11 @@ class ParallelImageFolders(data.Dataset):
         if self.classes is not None:
             classidx = paths[-1]
             paths = paths[:-1]
-        sources = [self.loader(path) for path in paths]
+        try:
+            sources = [self.loader(path) for path in paths]
+        except:
+            print('Error loading %s' % paths)
+            raise
         # Add a common shared state dict to allow random crops/flips to be
         # coordinated.
         shared_state = {}
@@ -140,7 +151,7 @@ def walk_image_files(rootdir, verbose=None):
                 for line in f.readlines()])
             return result
     result = []
-    for dirname, _, fnames in sorted(pbar(os.walk(rootdir),
+    for dirname, _, fnames in sorted(pbar(os.walk(rootdir, followlinks=True),
             desc='Walking %s' % os.path.basename(rootdir))):
         for fname in sorted(fnames):
             if is_image_file(fname) or is_npy_file(fname):
