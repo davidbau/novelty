@@ -4,7 +4,7 @@ information, such as parallel feature channels in separate files,
 cached files with lists of filenames, etc.
 '''
 
-import os, torch, re, random, numpy, itertools
+import os, torch, re, random, numpy, itertools, warnings
 import torch.utils.data as data
 from torchvision.datasets.folder import default_loader as tv_default_loader
 from PIL import Image
@@ -64,6 +64,8 @@ class ParallelImageFolders(data.Dataset):
             size=None,
             shuffle=None,
             lazy_init=True):
+        # In the common case we do not care about this issue
+        warnings.filterwarnings('ignore', message='.*orrupt EXIF.*')
         self.image_roots = image_roots
         if transform is not None and not hasattr(transform, '__iter__'):
             transform = [transform for _ in image_roots]
